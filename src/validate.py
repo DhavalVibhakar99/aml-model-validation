@@ -472,6 +472,49 @@ def forecast_section(scores, v, m):
     v["fc_unseen"], v["fc_unseen_share"] = f"{unseen:,}", pct(unseen / n_pos)
 
 
+# ---------------------------------------------------------------- final holdout
+
+def holdout_section(v, m):
+    """Reads reports/holdout.json - written once by holdout.py, never recomputed
+    here. Also checks the artifacts on disk are still the ones it scored with."""
+    import hashlib
+    h = json.loads((REPORTS / "holdout.json").read_text())
+    now = {f: hashlib.sha256((ARTIFACTS / f).read_bytes()).hexdigest() for f in h["artifact_sha256"]}
+    v["ho_artifacts_match"] = ("match" if now == h["artifact_sha256"]
+                               else "**do NOT match** (models were retrained after the holdout)")
+    pop, hm = h["population"], h["metrics"]
+    test = {"rules": m["hi_test/rules"], "logreg": m["hi_test/logreg"], "lightgbm": m["hi_test/lightgbm"],
+            "rules_untuned": m["hi_test/rules_untuned"]}
+    rows = []
+    for model in ("rules_untuned", "rules", "logreg", "lightgbm"):
+        r, t = hm[model], test[model]
+        rows.append({"Model": NAME[model],
+                     "PR-AUC (test → holdout)": f"{t['pr_auc']:.3f} → {r['pr_auc']:.3f}",
+                     "P@500": f"{pct(t['precision_at_500'], 0)} → {pct(r['precision_at_500'], 0)}",
+                     "R@500": f"{pct(t['recall_at_500'])} → {pct(r['recall_at_500'])}",
+                     "R@1000": f"{pct(t['recall_at_1000'])} → {pct(r['recall_at_1000'])}",
+                     "Fresh PR-AUC": f"{r['fresh_pr_auc']:.3f}",
+                     "Fresh R@500": pct(r["fresh_recall_at_500"]),
+                     "Fresh R@1000": pct(r["fresh_recall_at_1000"])})
+    v["table_holdout"] = md_table(pd.DataFrame(rows))
+    g, ru = hm["lightgbm"], hm["rules"]
+    v.update(ho_sha=h["git_sha"], ho_when=h["scored_at"], ho_accts=f"{pop['accounts']:,}",
+             ho_pos=f"{pop['positives']:,}", ho_prev=pct(pop["prevalence"], 2),
+             ho_fresh=f"{pop['fresh_positives']:,}", ho_stale=f"{pop['stale_accounts']:,}",
+             ho_gbm_prauc=f"{g['pr_auc']:.3f}", ho_gbm_p500=pct(g["precision_at_500"], 0),
+             ho_gbm_r500=pct(g["recall_at_500"]), ho_gbm_r1000=pct(g["recall_at_1000"]),
+             ho_gbm_fresh_prauc=f"{g['fresh_pr_auc']:.3f}",
+             ho_gbm_fresh_r500=pct(g["fresh_recall_at_500"]),
+             ho_gbm_fresh_r1000=pct(g["fresh_recall_at_1000"]),
+             ho_rules_p500=pct(ru["precision_at_500"], 0), ho_rules_r500=pct(ru["recall_at_500"]),
+             ho_lift_r500=f"{g['recall_at_500'] / ru['recall_at_500']:.0f}",
+             ho_fresh_lift_r500=f"{g['fresh_recall_at_500'] / ru['fresh_recall_at_500']:.0f}",
+             ho_max_r500=pct(500 / pop["positives_total"]),
+             ho_fresh_max_r500=pct(500 / pop["fresh_positives"]),
+             ho_psi=f"{h['psi_lightgbm_score_vs_train']:.3f}")
+    m["holdout"] = h
+
+
 def main():
     FIGS.mkdir(parents=True, exist_ok=True)
     style()
@@ -485,6 +528,7 @@ def main():
     soundness_section(scores, gain, v, m)
     stress_section(scores, v, m)
     forecast_section(scores, v, m)
+    holdout_section(v, m)
     runs = sorted((REPORTS / "runs").glob("*.json"))
     v["run_id"] = json.loads(runs[-1].read_text())["run_id"] if runs else "n/a"
 

@@ -1,6 +1,6 @@
 PY := .venv/bin/python
 
-.PHONY: setup data split train validate all test
+.PHONY: setup data split train validate all test holdout
 
 setup:
 	python3.11 -m venv .venv
@@ -24,3 +24,7 @@ all: split train validate
 
 test:
 	$(PY) -m pytest -q
+
+# scores the final holdout ONCE; refuses to rerun (DECISIONS #11)
+holdout:
+	$(PY) src/holdout.py

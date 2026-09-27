@@ -179,3 +179,10 @@ what would change our mind.
   development and final evaluation).
 - **What would change our mind:** more data. A proper holdout would be a full
   later period that doesn't overlap anything.
+- **Result (scored once, commit 7d02a45):** LightGBM PR-AUC 0.322 (test: 0.334),
+  93% precision at 500, 8x the tuned rules' recall. Fresh labels only: PR-AUC
+  0.196, recall@500 12.5%, still 8x the rules. Score PSI vs train 0.030 (test was
+  0.423), which supports the weekday-mix explanation of the test drift. A
+  loading bug was found and fixed *before* scoring: the pickled LR pointed at
+  `__main__.log_heavy`. The fix was checked to reproduce every test score
+  exactly (max diff 0.0) before the holdout ran.

@@ -15,7 +15,8 @@ Rerun `make all` to rebuild it from the raw data.*
 | **Use** | Rank accounts for AML investigator review under a fixed alert budget |
 | **Benchmark** | Six-rule transaction-monitoring baseline, thresholds tuned on the train window, + logistic regression |
 | **Headline** | At 500 alerts: **99% precision, 18.0% recall** vs 10% / 1.9% for tuned rules (**10x** the recall; 13x vs hand-set rules) |
-| **Opinion** | **Fit for purpose as an alert-prioritization model on this data, with conditions** (Section 10) |
+| **Final holdout** | Sept 7-10, scored once: PR-AUC 0.322, 93% precision at 500. On labels no decision had seen: PR-AUC 0.196 (Section 9) |
+| **Opinion** | **Fit for purpose as an alert-prioritization model on this data, with conditions** (Section 11) |
 
 Main findings:
 
@@ -35,6 +36,10 @@ Main findings:
    ranked as well as those seen in training (PR-AUC 0.356 vs
    0.328). All three models do better on new accounts, which are simply
    easier to spot.
+7. **The frozen holdout mostly confirms the test result, with one weaker number.**
+   On Sept 7-10, PR-AUC is 0.322 vs 0.334 on test. Counting only
+   positives whose labels no decision ever touched (Sept 9-10 only), it's
+   0.196. That fresh-label number is the uncontaminated one.
 5. **The originally proposed framing (predict the *next* 48h) doesn't work on this data**
    (PR-AUC 0.031), for reasons in the data, not the model (Section 8).
 
@@ -382,12 +387,50 @@ Forward-looking detection would need longer history, persistent account
 behavior, or network features that reach the accounts about to be used. The
 evidence is kept in `reports/runs/` (the first run log is the forecasting run).
 
-## 9. Limitations
+## 9. Final holdout (Sept 7-10, scored once)
+
+The design was fixed in DECISIONS #11 before scoring. `src/holdout.py` scored it
+once, at 2026-09-27T21:13:28+00:00 from commit `7d02a45`, using the saved models and rule
+thresholds (no refit). The script refuses to run a second time. The model files
+on disk now match the SHA-256 hashes recorded at scoring time. No
+model, feature, threshold or conclusion was changed after it ran.
+
+367,656 accounts, 2,693 positives (0.73%). Sept 7-8 overlap the test
+window, which informed the label decision. So the **fresh** columns count only
+the 1,196 accounts whose laundering falls *only* on Sept 9-10, labels nobody
+has seen. Fresh PR-AUC leaves out the 1,497 accounts already known positive
+from Sept 7-8, since they are neither clean negatives nor fresh positives.
+
+| Model | PR-AUC (test → holdout) | P@500 | R@500 | R@1000 | Fresh PR-AUC | Fresh R@500 | Fresh R@1000 |
+|---|---|---|---|---|---|---|---|
+| Rules baseline (hand-set) | 0.016 → 0.022 | 7% → 6% | 1.3% → 1.2% | 1.7% → 1.9% | 0.006 | 0.8% | 1.2% |
+| Rules baseline (tuned) | 0.019 → 0.022 | 10% → 11% | 1.9% → 2.0% | 3.3% → 3.6% | 0.008 | 1.5% | 3.3% |
+| Logistic regression | 0.085 → 0.076 | 18% → 22% | 3.3% → 4.0% | 5.8% → 6.8% | 0.024 | 2.0% | 4.6% |
+| LightGBM | 0.334 → 0.322 | 99% → 93% | 18.0% → 17.3% | 23.8% → 24.2% | 0.196 | 12.5% | 16.9% |
+
+- **The headline holds.** LightGBM reaches PR-AUC 0.322, 93%
+  precision at 500, and recall 17.3% out of a possible 18.6%. That
+  is 8x the tuned rules' recall (2.0%).
+- **The fresh-label number is weaker, and it's the honest one.** PR-AUC is
+  0.196 and recall at 500 is 12.5% (at most
+  41.8% is possible), still 8x the tuned rules.
+  Part of the gap is mechanical: the Sept 7-8 positives also rank highly and take up
+  alert slots. They are correct alerts, but they don't count toward fresh recall.
+  The other part is probably real. A fresh positive's laundering sits only in the
+  last two days of the window, so half its history is ordinary activity that dilutes the signal.
+- **Score drift was low** (PSI 0.030 vs the train window, against 0.423 on
+  test). The holdout's weekdays (Wed-Sat) look more like the train window's
+  (Thu-Sun) than the test window's (Mon-Thu). This supports the Section 6 reading that
+  the test PSI was mostly weekday mix, not model decay, but one window can't
+  prove it.
+
+## 10. Limitations
 
 - **Synthetic data.** The laundering typologies and channel preferences come from a generator.
   Real performance would differ, probably by a lot. The ACH reliance shows
   how a model picks up the generator's habits.
-- **10 usable days, one backtest.** There is a single train/test cutoff. A real validation
+- **10 usable days, one backtest.** There is a single train/test cutoff, plus a holdout that
+  half-overlaps the test window. A real validation
   would roll the cutoff across months and report the spread.
 - **Perfect labels.** Every laundering transaction is labelled. Real AML labels
   come from SARs and investigations, which are incomplete, delayed and biased
@@ -399,12 +442,15 @@ evidence is kept in `reports/runs/` (the first run log is the forecasting run).
 - **Fixed hyperparameters.** They were not tuned, so the numbers are likely
   somewhat conservative.
 
-## 10. Conclusion and conditions
+## 11. Conclusion and conditions
 
 On this data, LightGBM is a large improvement over the rules baseline for
-prioritizing alerts: 10x the recall at a 500-alert budget, with
-near-perfect precision at the top of the queue. The validation supports using
-it **as a ranking layer**, subject to:
+prioritizing alerts: 10x the recall of the tuned rules at a 500-alert budget, with
+near-perfect precision at the top of the queue. It held up on a frozen holdout
+scored once (PR-AUC 0.322), though it was weaker on labels no decision
+had seen (0.196), and that is the number to quote as the
+conservative estimate. The validation supports using it **as a ranking layer**,
+subject to:
 
 1. **Use ranks, not probabilities**, until it has been recalibrated on recent confirmed outcomes.
 2. **Run score and feature PSI monitoring** (Section 6). A red score PSI triggers
@@ -419,6 +465,7 @@ it **as a ranking layer**, subject to:
 ```
 make data      # download the two CSVs (kagglehub) and ingest to Parquet
 make all       # split -> train -> validate; rebuilds this report
+make holdout   # final holdout - already scored once, refuses to rerun
 make test      # unit + leakage tests (no data needed)
 ```
 

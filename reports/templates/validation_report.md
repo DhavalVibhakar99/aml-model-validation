@@ -15,7 +15,8 @@ Rerun `make all` to rebuild it from the raw data.*
 | **Use** | Rank accounts for AML investigator review under a fixed alert budget |
 | **Benchmark** | Six-rule transaction-monitoring baseline, thresholds tuned on the train window, + logistic regression |
 | **Headline** | At 500 alerts: **{gbm_p500} precision, {gbm_r500} recall** vs {rules_p500} / {rules_r500} for tuned rules (**{lift_r500}x** the recall; {lift_untuned_r500}x vs hand-set rules) |
-| **Opinion** | **Fit for purpose as an alert-prioritization model on this data, with conditions** (Section 10) |
+| **Final holdout** | Sept 7-10, scored once: PR-AUC {ho_gbm_prauc}, {ho_gbm_p500} precision at 500. On labels no decision had seen: PR-AUC {ho_gbm_fresh_prauc} (Section 9) |
+| **Opinion** | **Fit for purpose as an alert-prioritization model on this data, with conditions** (Section 11) |
 
 Main findings:
 
@@ -35,6 +36,10 @@ Main findings:
    ranked as well as those seen in training (PR-AUC {seg_gbm_new_prauc} vs
    {seg_gbm_seen_prauc}). All three models do better on new accounts, which are simply
    easier to spot.
+7. **The frozen holdout mostly confirms the test result, with one weaker number.**
+   On Sept 7-10, PR-AUC is {ho_gbm_prauc} vs {gbm_prauc} on test. Counting only
+   positives whose labels no decision ever touched (Sept 9-10 only), it's
+   {ho_gbm_fresh_prauc}. That fresh-label number is the uncontaminated one.
 5. **The originally proposed framing (predict the *next* 48h) doesn't work on this data**
    (PR-AUC {fc_prauc}), for reasons in the data, not the model (Section 8).
 
@@ -332,12 +337,45 @@ Forward-looking detection would need longer history, persistent account
 behavior, or network features that reach the accounts about to be used. The
 evidence is kept in `reports/runs/` (the first run log is the forecasting run).
 
-## 9. Limitations
+## 9. Final holdout (Sept 7-10, scored once)
+
+The design was fixed in DECISIONS #11 before scoring. `src/holdout.py` scored it
+once, at {ho_when} from commit `{ho_sha}`, using the saved models and rule
+thresholds (no refit). The script refuses to run a second time. The model files
+on disk now {ho_artifacts_match} the SHA-256 hashes recorded at scoring time. No
+model, feature, threshold or conclusion was changed after it ran.
+
+{ho_accts} accounts, {ho_pos} positives ({ho_prev}). Sept 7-8 overlap the test
+window, which informed the label decision. So the **fresh** columns count only
+the {ho_fresh} accounts whose laundering falls *only* on Sept 9-10, labels nobody
+has seen. Fresh PR-AUC leaves out the {ho_stale} accounts already known positive
+from Sept 7-8, since they are neither clean negatives nor fresh positives.
+
+{table_holdout}
+
+- **The headline holds.** LightGBM reaches PR-AUC {ho_gbm_prauc}, {ho_gbm_p500}
+  precision at 500, and recall {ho_gbm_r500} out of a possible {ho_max_r500}. That
+  is {ho_lift_r500}x the tuned rules' recall ({ho_rules_r500}).
+- **The fresh-label number is weaker, and it's the honest one.** PR-AUC is
+  {ho_gbm_fresh_prauc} and recall at 500 is {ho_gbm_fresh_r500} (at most
+  {ho_fresh_max_r500} is possible), still {ho_fresh_lift_r500}x the tuned rules.
+  Part of the gap is mechanical: the Sept 7-8 positives also rank highly and take up
+  alert slots. They are correct alerts, but they don't count toward fresh recall.
+  The other part is probably real. A fresh positive's laundering sits only in the
+  last two days of the window, so half its history is ordinary activity that dilutes the signal.
+- **Score drift was low** (PSI {ho_psi} vs the train window, against {gbm_psi} on
+  test). The holdout's weekdays (Wed-Sat) look more like the train window's
+  (Thu-Sun) than the test window's (Mon-Thu). This supports the Section 6 reading that
+  the test PSI was mostly weekday mix, not model decay, but one window can't
+  prove it.
+
+## 10. Limitations
 
 - **Synthetic data.** The laundering typologies and channel preferences come from a generator.
   Real performance would differ, probably by a lot. The ACH reliance shows
   how a model picks up the generator's habits.
-- **10 usable days, one backtest.** There is a single train/test cutoff. A real validation
+- **10 usable days, one backtest.** There is a single train/test cutoff, plus a holdout that
+  half-overlaps the test window. A real validation
   would roll the cutoff across months and report the spread.
 - **Perfect labels.** Every laundering transaction is labelled. Real AML labels
   come from SARs and investigations, which are incomplete, delayed and biased
@@ -349,12 +387,15 @@ evidence is kept in `reports/runs/` (the first run log is the forecasting run).
 - **Fixed hyperparameters.** They were not tuned, so the numbers are likely
   somewhat conservative.
 
-## 10. Conclusion and conditions
+## 11. Conclusion and conditions
 
 On this data, LightGBM is a large improvement over the rules baseline for
-prioritizing alerts: {lift_r500}x the recall at a 500-alert budget, with
-near-perfect precision at the top of the queue. The validation supports using
-it **as a ranking layer**, subject to:
+prioritizing alerts: {lift_r500}x the recall of the tuned rules at a 500-alert budget, with
+near-perfect precision at the top of the queue. It held up on a frozen holdout
+scored once (PR-AUC {ho_gbm_prauc}), though it was weaker on labels no decision
+had seen ({ho_gbm_fresh_prauc}), and that is the number to quote as the
+conservative estimate. The validation supports using it **as a ranking layer**,
+subject to:
 
 1. **Use ranks, not probabilities**, until it has been recalibrated on recent confirmed outcomes.
 2. **Run score and feature PSI monitoring** (Section 6). A red score PSI triggers
@@ -369,6 +410,7 @@ it **as a ranking layer**, subject to:
 ```
 make data      # download the two CSVs (kagglehub) and ingest to Parquet
 make all       # split -> train -> validate; rebuilds this report
+make holdout   # final holdout - already scored once, refuses to rerun
 make test      # unit + leakage tests (no data needed)
 ```
 
