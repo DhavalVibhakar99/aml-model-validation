@@ -22,8 +22,23 @@ what would change our mind.
 - **Observation:** Sept 1 has ~2x a normal weekday's volume, and ~45% of its rows
   are self-transfers (src = dst), versus ~2% on other days. It looks like
   balance seeding at simulation start.
-- **Open question for step 2:** whether self-transfers and/or day 1 should
-  count toward behavior features. Not decided yet.
+- **Decision (Dhaval):** exclude self-transfers from the behavior features
+  (counterparties, in/out amounts, pass-through, timing, format mix), but keep
+  them as their own flag feature: self-transfer count in the feature window,
+  **ignoring Sept 1**. Day 1 itself stays in.
+- **Alternatives:** drop self-transfers entirely; drop day 1 entirely; leave
+  both alone.
+- **Why:** counting a self-transfer as a counterparty pads fan-in/fan-out and
+  pushes out/in toward 1 for ordinary accounts. But dropping them loses signal:
+  accounts with a self-transfer after Sept 1 are 13.9% laundering-involved (HI;
+  LI 4.1%) vs ~0.5-1.1% otherwise. The Sept 1 seeding transfers are left out of
+  the flag because ~70% of accounts have one, and only the train feature window
+  (days 1-4) contains Sept 1, so counting them would create a train/test shift.
+  With self-transfers removed, Sept 1 is ~1.3x the next Thursday rather than
+  2.3x, so keeping day 1 is fine.
+- **What would change our mind:** the flag coming out unstable (high PSI)
+  between windows, or the 13.9% not holding up once labels come from a later
+  window than the features.
 
 ## 3. Download single files via kagglehub, not the full bundle
 - **Decision:** `kagglehub.dataset_download(..., path="HI-Small_Trans.csv")`
