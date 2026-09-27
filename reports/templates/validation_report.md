@@ -13,8 +13,8 @@ Rerun `make all` to rebuild it from the raw data.*
 |---|---|
 | **Model** | LightGBM account classifier, {n_features} behavior features over a 4-day window |
 | **Use** | Rank accounts for AML investigator review under a fixed alert budget |
-| **Benchmark** | Six-rule transaction-monitoring baseline + logistic regression |
-| **Headline** | At 500 alerts: **{gbm_p500} precision, {gbm_r500} recall** vs {rules_p500} / {rules_r500} for rules (**{lift_r500}x** the recall) |
+| **Benchmark** | Six-rule transaction-monitoring baseline, thresholds tuned on the train window, + logistic regression |
+| **Headline** | At 500 alerts: **{gbm_p500} precision, {gbm_r500} recall** vs {rules_p500} / {rules_r500} for tuned rules (**{lift_r500}x** the recall; {lift_untuned_r500}x vs hand-set rules) |
 | **Opinion** | **Fit for purpose as an alert-prioritization model on this data, with conditions** (Section 10) |
 
 Main findings:
@@ -30,7 +30,11 @@ Main findings:
    would have fired here.
 4. **Part of the signal is a simulator habit.** Payment-format shares carry
    {imp_fmt_share} of the model's gain. Without them, PR-AUC drops {nofmt_drop}
-   but the model still beats rules {nofmt_lift}x on recall at 500.
+   but the model still beats the tuned rules {nofmt_lift}x on recall at 500.
+6. **No sign of memorization.** Accounts that first appear in the test window are
+   ranked as well as those seen in training (PR-AUC {seg_gbm_new_prauc} vs
+   {seg_gbm_seen_prauc}). All three models do better on new accounts, which are simply
+   easier to spot.
 5. **The originally proposed framing (predict the *next* 48h) doesn't work on this data**
    (PR-AUC {fc_prauc}), for reasons in the data, not the model (Section 8).
 
@@ -127,22 +131,37 @@ DECISIONS #6). Both labels are built and reported.
 ### 3.4 Model choice
 
 - **Rules baseline:** six standard typologies (rapid movement, fan-in, fan-out,
-  structuring, velocity, high-risk channel), with thresholds sanity-checked on the
-  training window. Accounts are ranked by the number of rules hit, with ties broken
-  by dollar flow, the way an alert queue is usually sorted. There is deliberately
-  no "ACH rule", even though the data would reward one, because that would tune
-  the baseline to the answer.
+  structuring, velocity, high-risk channel). Accounts are ranked by the number of
+  rules hit, with ties broken by dollar flow, the way an alert queue is usually
+  sorted. There is deliberately no "ACH rule", even though the data would reward
+  one, because that would design the baseline around the answer.
+  - *Hand-set thresholds* are what an analyst would write down on day one.
+  - *Tuned thresholds* are chosen by coordinate descent over a grid of plausible
+    values, **on the training window only**, maximizing mean precision at 100/500/1,000
+    alerts, with each rule allowed to be switched off. Training-window precision
+    rose from {rules_train_obj_start} to {rules_train_obj_end}. Tuning kept only
+    {rules_n_on} rules: {rules_tuned_desc}. The tuned set is the baseline every lift
+    number in this report is measured against, because a model should be compared
+    with the strongest rules you could build, not a strawman.
 - **Logistic regression:** log-transformed counts and amounts, standardized.
   It serves as the interpretable challenger.
 - **LightGBM:** 400 trees, learning rate 0.03, `min_child_samples=200` (there are only
   {hi_small_train_pos} training positives, so small leaves would memorize them).
 
-The rules, one at a time on the test window:
+The rules, one at a time on the test window, hand-set vs tuned:
 
 {table_rules}
 
-Firing on **any** rule gives {rules_any_alerts} alerts at {rules_any_prec} precision.
-That is realistic for TM, and it is the problem this model is meant to solve.
+With hand-set thresholds, firing on **any** rule gives {rules_any_alerts} alerts at
+{rules_any_prec} precision. That is realistic for TM, and it is the problem this model
+is meant to solve.
+
+Tuning makes the rules better *rankers* but a worse *alert set*. `R5_velocity`
+at 2 fires on most active accounts, so in practice the tuned set means "fan-in
+of 7 or more first, then the biggest dollar flow". That's a sensible
+prioritization heuristic that nobody would deploy as alert generation. On test,
+the gain is smaller than on train (precision at 500 goes from {rulesu_p500} to
+{rules_p500}), so part of the tuning gain was specific to the training window.
 
 ### 3.5 What the model relies on
 
@@ -183,8 +202,11 @@ precision and recall when investigators review the top K accounts.
   recall at 500 is {max_r500}, and the model gets {gbm_r500} (95% CI {gbm_r500_ci}).
 - **The tail is hard.** Past about 600 alerts precision falls quickly ({gbm_p1000}
   at 1,000). Many positives look like ordinary accounts in a 4-day window.
-- **Lift over rules** in recall is {lift_r100}x at 100, {lift_r500}x at 500 and
-  {lift_r1000}x at 1,000.
+- **Lift over the tuned rules** in recall is {lift_r100}x at 100, {lift_r500}x at
+  500 and {lift_r1000}x at 1,000. Against the hand-set rules it would be
+  {lift_untuned_r100}x, {lift_untuned_r500}x and {lift_untuned_r1000}x. Tuning the
+  baseline roughly halves the lift at 1,000 alerts, where the tuned rules'
+  flow-ranking catches up.
 - **Logistic regression** (PR-AUC {lr_prauc}) is well behind LightGBM. The
   signal is mainly in interactions (e.g. ACH *and* pass-through *and* few
   counterparties), which a linear model can't represent.
@@ -192,6 +214,30 @@ precision and recall when investigators review the top K accounts.
   {gbm_prauc} out-of-time, a small gap.
 
 Intervals come from 200 bootstrap resamples of test accounts.
+
+### 4.1 Accounts seen in training vs new accounts
+
+{seg_seen_share} of test accounts ({seg_seen_accts}) were also active in the train
+window. The other {seg_new_accts} appear for the first time. The models see no account
+identifiers, so they can't memorize anyone directly. But familiar accounts or
+repeat launderers could still make "seen" accounts easier, and a bank's new-customer
+book is exactly where you'd worry about weaker performance. Only {seg_repeat}
+test positives ({seg_repeat_share}) were also positive in the train window.
+
+The ranking and the 500-alert budget stay global. The table shows where the
+alerts and misses land:
+
+{table_segments}
+
+- **LightGBM ranks new accounts at least as well** (PR-AUC {seg_gbm_new_prauc} vs
+  {seg_gbm_seen_prauc}), and its {seg_gbm_new_alerts} alerts on new accounts are
+  {seg_gbm_new_prec} precise. New accounts are also far more likely to be laundering
+  ({seg_new_prev} vs {seg_seen_prev}), which fits mule accounts being opened for the job.
+- **The rules and LR also do better on new accounts**, which says those accounts are
+  simply easier. Their activity is short and concentrated, so the signal isn't
+  diluted by an ordinary history.
+- **There is no evidence of memorization.** If LightGBM relied on recognizing
+  accounts from training, the "seen" segment would be clearly better. It isn't.
 
 ## 5. Calibration
 

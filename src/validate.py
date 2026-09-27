@@ -40,7 +40,9 @@ TEMPLATE = REPORTS / "templates" / "validation_report.md"
 # palette - the only three that stay distinguishable for colour-blind readers
 # when every pair can be on screen at once)
 COLOR = {"lightgbm": "#2a78d6", "rules": "#eb6834", "logreg": "#1baf7a"}
-NAME = {"lightgbm": "LightGBM", "rules": "Rules baseline", "logreg": "Logistic regression"}
+NAME = {"lightgbm": "LightGBM", "rules": "Rules baseline (tuned)", "logreg": "Logistic regression",
+        "rules_untuned": "Rules baseline (hand-set)"}
+TAG = {"lightgbm": "gbm", "logreg": "lr", "rules": "rules", "rules_untuned": "rulesu"}
 INK, INK2, GRID, SURFACE = "#0b0b0b", "#52514e", "#e5e4df", "#fcfcfb"
 MODELS = ["rules", "logreg", "lightgbm"]
 
@@ -127,11 +129,14 @@ def data_quirks(v):
 
 def outcomes_section(scores, v, m):
     n_pos = n_positives("hi_small", "test", "label")
+    # lift is measured against the *tuned* rules - the strongest version of the
+    # baseline we could build from the train window (DECISIONS #9)
     rules = {k: at_k(*get(scores, "rules"), k, n_pos)["recall"] for k in KS}
+    untuned = {k: at_k(*get(scores, "rules_untuned"), k, n_pos)["recall"] for k in KS}
     rows = []
-    for model in MODELS:
+    for model in ["rules_untuned", *MODELS]:
         y, s = get(scores, model)
-        r = summary(y, s, n_pos, probabilistic=model != "rules")
+        r = summary(y, s, n_pos, probabilistic=not model.startswith("rules"))
         lo, hi = bootstrap_ci(y, s, n_pos, lambda a, b, n: average_precision_score(a, b))
         rlo, rhi = bootstrap_ci(y, s, n_pos, lambda a, b, n: at_k(a, b, 500, n)["recall"])
         r.update(pr_auc_ci=[lo, hi], recall_at_500_ci=[rlo, rhi])
@@ -140,10 +145,10 @@ def outcomes_section(scores, v, m):
         for k in KS:
             row[f"P@{k}"] = pct(r[f"precision_at_{k}"], 0)
             row[f"R@{k}"] = pct(r[f"recall_at_{k}"])
-        row["Lift vs rules (R@500)"] = ("-" if model == "rules"
+        row["Lift vs tuned rules (R@500)"] = ("-" if model.startswith("rules")
                                         else f"{r['recall_at_500'] / rules[500]:.1f}x")
         rows.append(row)
-        tag = {"lightgbm": "gbm", "logreg": "lr", "rules": "rules"}[model]
+        tag = TAG[model]
         v[f"{tag}_prauc"] = f"{r['pr_auc']:.3f}"
         v[f"{tag}_prauc_ci"] = f"{lo:.3f}-{hi:.3f}"
         for k in KS:
@@ -154,6 +159,7 @@ def outcomes_section(scores, v, m):
     v["table_outcomes"] = md_table(pd.DataFrame(rows))
     for k in KS:
         v[f"lift_r{k}"] = f"{m['hi_test/lightgbm'][f'recall_at_{k}'] / rules[k]:.0f}"
+        v[f"lift_untuned_r{k}"] = f"{m['hi_test/lightgbm'][f'recall_at_{k}'] / untuned[k]:.0f}"
         v[f"max_r{k}"] = pct(min(k, n_pos) / n_pos)
     v["hi_test_npos"] = f"{n_pos:,}"
     v["base_rate_test"] = pct(n_pos / len(get(scores, "rules")[0]), 2)
@@ -345,23 +351,39 @@ def soundness_section(scores, gain, v, m):
     v["nofmt_lift"] = f"{r['recall_at_500'] / m['hi_test/rules']['recall_at_500']:.0f}"
     v["n_nofmt_features"] = str(len(NO_FORMAT))
 
-    # the rules one at a time: how noisy is each, and how much does it overlap?
+    # the rules one at a time, hand-set vs tuned: how noisy is each, and what
+    # did tuning do to it?
     te = load("hi_small", "test")
-    flags = rule_flags(te)
+    th = json.loads((ARTIFACTS / "rule_thresholds.json").read_text())
+    hand, tuned = rule_flags(te, th["rules_untuned"]), rule_flags(te, th["rules"])
+
+    def fmt_th(p):
+        return "off" if p is None else ", ".join(f"{x:,}" if isinstance(x, int) else f"{x:g}" for x in p)
+
+    def cell(flag):
+        hit = flag == 1
+        return f"{hit.sum():,}", pct(te.label[hit].mean()) if hit.any() else "-"
+
     rows = []
     for rule in RULES:
-        hit = flags[rule] == 1
-        rows.append({"Rule": rule, "Alerts": f"{hit.sum():,}",
-                     "Precision": pct(te.label[hit].mean() if hit.any() else 0),
-                     "Positives caught": f"{te.label[hit].sum():,}"})
-    anyhit = flags.sum(axis=1) > 0
-    rows.append({"Rule": "**any rule**", "Alerts": f"{anyhit.sum():,}",
-                 "Precision": pct(te.label[anyhit].mean()),
-                 "Positives caught": f"{te.label[anyhit].sum():,}"})
+        (ha, hp), (ta, tp) = cell(hand[rule]), cell(tuned[rule])
+        rows.append({"Rule": rule, "Hand-set threshold": fmt_th(th["rules_untuned"][rule]),
+                     "Alerts": ha, "Precision": hp,
+                     "Tuned threshold": fmt_th(th["rules"][rule]), "Alerts ": ta, "Precision ": tp})
+    (ha, hp), (ta, tp) = cell((hand.sum(axis=1) > 0).astype(int)), cell((tuned.sum(axis=1) > 0).astype(int))
+    rows.append({"Rule": "**any rule**", "Hand-set threshold": "", "Alerts": ha, "Precision": hp,
+                 "Tuned threshold": "", "Alerts ": ta, "Precision ": tp})
     v["table_rules"] = md_table(pd.DataFrame(rows))
+    anyhit = hand.sum(axis=1) > 0
     v["rules_any_alerts"] = f"{anyhit.sum():,}"
     v["rules_any_prec"] = pct(te.label[anyhit].mean())
     v["rules_any_recall"] = pct(te.label[anyhit].sum() / n_pos)
+    v["rules_n_on"] = str(sum(p is not None for p in th["rules"].values()))
+    v["rules_tuned_desc"] = " and ".join(
+        f"`{r}` at {fmt_th(p)}" for r, p in th["rules"].items() if p is not None)
+    run = json.loads(sorted((REPORTS / "runs").glob("*.json"))[-1].read_text())
+    hist = run["rule_tuning"]["history"]
+    v["rules_train_obj_start"], v["rules_train_obj_end"] = f"{hist[0][1]:.3f}", f"{hist[-1][1]:.3f}"
 
 
 # ---------------------------------------------------------------- stress test
@@ -380,7 +402,7 @@ def stress_section(scores, v, m):
     for model, label in (("lightgbm", "LightGBM trained on HI"),
                          ("lightgbm_li_native", "LightGBM trained on LI (reference)"),
                          ("logreg", "Logistic regression trained on HI"),
-                         ("rules", "Rules baseline")):
+                         ("rules", "Rules baseline (tuned on HI)")):
         y, s = get(scores, model, "li_small")
         r = summary(y, s, n_pos, probabilistic=model != "rules")
         m[f"li_test/{model}"] = r

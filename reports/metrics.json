@@ -1,5 +1,5 @@
 {
-  "hi_test/rules": {
+  "hi_test/rules_untuned": {
     "pr_auc": 0.016239086600586636,
     "base_rate": 0.01085286018497667,
     "precision_at_100": 0.09,
@@ -15,6 +15,24 @@
     "recall_at_500_ci": [
       0.008669953881769627,
       0.01730607806554874
+    ]
+  },
+  "hi_test/rules": {
+    "pr_auc": 0.018707544490407003,
+    "base_rate": 0.01085286018497667,
+    "precision_at_100": 0.14,
+    "recall_at_100": 0.005096468875136513,
+    "precision_at_500": 0.104,
+    "recall_at_500": 0.01892974153622133,
+    "precision_at_1000": 0.09,
+    "recall_at_1000": 0.03276301419730615,
+    "pr_auc_ci": [
+      0.01652888816094213,
+      0.02135902729891815
+    ],
+    "recall_at_500_ci": [
+      0.014569379823015925,
+      0.02355959768699391
     ]
   },
   "hi_test/logreg": {
@@ -59,19 +77,19 @@
     "accounts": 237112,
     "positives": 2328,
     "prevalence": 0.00981814501164007,
-    "pr_auc": 0.015468605459733059,
-    "alerts_in_top500": 500,
-    "precision_in_top500": 0.074,
+    "pr_auc": 0.01827682206849935,
+    "alerts_in_top500": 343,
+    "precision_in_top500": 0.10787172011661808,
     "recall_at_500": 0.015893470790378006
   },
   "segment/rules/new in test": {
     "accounts": 16001,
     "positives": 419,
     "prevalence": 0.026185863383538528,
-    "pr_auc": 0.07682955543993433,
-    "alerts_in_top500": 0,
-    "precision_in_top500": 0.0,
-    "recall_at_500": 0.0
+    "pr_auc": 0.07351168864100383,
+    "alerts_in_top500": 157,
+    "precision_in_top500": 0.09554140127388536,
+    "recall_at_500": 0.03579952267303103
   },
   "segment/logreg/seen in train": {
     "accounts": 237112,
@@ -195,14 +213,14 @@
     "brier": 0.006819276078124523
   },
   "li_test/rules": {
-    "pr_auc": 0.010031977774359466,
+    "pr_auc": 0.012741285000714846,
     "base_rate": 0.006907622143796758,
-    "precision_at_100": 0.03,
-    "recall_at_100": 0.0012583892617449664,
-    "precision_at_500": 0.026,
-    "recall_at_500": 0.005453020134228188,
-    "precision_at_1000": 0.037,
-    "recall_at_1000": 0.01552013422818792
+    "precision_at_100": 0.05,
+    "recall_at_100": 0.0020973154362416107,
+    "precision_at_500": 0.064,
+    "recall_at_500": 0.013422818791946308,
+    "precision_at_1000": 0.065,
+    "recall_at_1000": 0.02726510067114094
   },
   "stress/prior_correction": {
     "pi_hi_train": 0.005540630456207758,

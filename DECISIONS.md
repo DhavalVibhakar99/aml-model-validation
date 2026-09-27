@@ -130,3 +130,52 @@ what would change our mind.
   hand-written, so it needs rereading after any change that moves the results.
 - **What would change our mind:** a report long enough that templating gets
   in the way of editing (then use a proper tool, e.g. Quarto).
+
+## 9. Rules baseline thresholds tuned on the train window; lift measured against the tuned set
+- **Decision:** coordinate descent over a grid of plausible thresholds per rule
+  (with "off" as an option), maximizing mean precision@{100,500,1000} on HI
+  train. Converged in 4 passes and kept 2 of the 6 rules: fan-in >= 7 and
+  velocity >= 2. All lift numbers now use the tuned set; the hand-set set is
+  still reported.
+- **Result:** test precision@500 for the rules went 7% -> 10%, so LightGBM's
+  recall lift at 500 dropped from 13x to 10x, and at 1,000 from 14x to 7x.
+  Train objective doubled (0.085 -> 0.165) but test gained less, so some of the
+  tuning was specific to the training window.
+- **Alternatives:** keep hand-set thresholds only (the comparison would favor
+  the model); tune per rule independently (ignores how the rules combine in
+  the ranking); fit rule weights (at that point it's a model, not rules).
+- **Why:** a challenger should be measured against the strongest baseline you
+  could reasonably build from the same data. The tuned set is a good *ranker*
+  but not a deployable alert set (velocity >= 2 fires on 75% of accounts), and
+  the report says so.
+- **What would change our mind:** a constraint on total alert volume per
+  rule, which is how real rule tuning works (above/below-the-line testing).
+  That would give a more realistic, and probably weaker, tuned baseline.
+
+## 10. Seen vs new accounts: no memorization signal
+- **Decision:** report test metrics split by whether the account was active in
+  the train window, keeping the global ranking and budget.
+- **Result:** 94% of test accounts were seen in train. LightGBM PR-AUC is 0.328
+  on seen accounts and 0.356 on new ones. New accounts are 2.6x more likely to be
+  laundering. Only 9% of test positives were also train positives.
+- **What would change our mind:** a gap favoring seen accounts, which would
+  suggest the model is recognizing familiar behavior rather than typologies.
+
+## 11. Final holdout = Sept 7-10, scored once with frozen artifacts
+- **Decision (made before scoring):** Sept 9-10 are usable (HI: 862k txns, 956
+  laundering, 0.08-0.21%/day, no tail effect). The models expect 4 days of
+  history, so the holdout window is Sept 7-10 with the same detection label.
+  It's scored once by `src/holdout.py` using the saved LightGBM/LR files and
+  rule thresholds. The model file hashes and the git sha are recorded in the
+  output. No model, feature, threshold or report claim was changed after
+  seeing it.
+- **The catch:** Sept 7-8 overlap the test window, which informed decisions
+  (the label framing, #6). So the holdout also reports **fresh positives**:
+  accounts whose laundering falls *only* on Sept 9-10, i.e. labels no decision
+  has ever seen. The recall on those is the uncontaminated number.
+- **Alternatives:** a 2-day Sept 9-10 window (every count feature would be
+  about half its training value, so we'd be measuring a window-length mismatch,
+  not generalization); no holdout (then the test window is doing double duty as
+  development and final evaluation).
+- **What would change our mind:** more data. A proper holdout would be a full
+  later period that doesn't overlap anything.
