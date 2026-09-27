@@ -356,13 +356,25 @@ from Sept 7-8, since they are neither clean negatives nor fresh positives.
 - **The headline holds.** LightGBM reaches PR-AUC {ho_gbm_prauc}, {ho_gbm_p500}
   precision at 500, and recall {ho_gbm_r500} out of a possible {ho_max_r500}. That
   is {ho_lift_r500}x the tuned rules' recall ({ho_rules_r500}).
-- **The fresh-label number is weaker, and it's the honest one.** PR-AUC is
-  {ho_gbm_fresh_prauc} and recall at 500 is {ho_gbm_fresh_r500} (at most
+- **The fresh-label number is lower, and it's the conservative one to quote.**
+  PR-AUC is {ho_gbm_fresh_prauc} and recall at 500 is {ho_gbm_fresh_r500} (at most
   {ho_fresh_max_r500} is possible), still {ho_fresh_lift_r500}x the tuned rules.
-  Part of the gap is mechanical: the Sept 7-8 positives also rank highly and take up
-  alert slots. They are correct alerts, but they don't count toward fresh recall.
-  The other part is probably real. A fresh positive's laundering sits only in the
-  last two days of the window, so half its history is ordinary activity that dilutes the signal.
+  Three things drive the gap, and they affect the two metrics differently:
+  - *A harder group.* Fresh positives are accounts whose laundering only
+    *started* on Sept 9-10, so half of their 4-day history is ordinary activity
+    that dilutes the signal. The repeat launderers that are easiest to spot are,
+    by definition, not in this group. This affects both metrics.
+  - *A lower base rate (affects PR-AUC).* The fresh evaluation has
+    {ho_fresh_prev} positives against {ho_prev} in the full holdout, and PR-AUC falls
+    with the base rate even when ranking skill doesn't. Relative to its base
+    rate, fresh PR-AUC is {ho_gbm_fresh_prauc_x}x chance against
+    {ho_gbm_prauc_x}x for the full holdout. So the drop from {ho_gbm_prauc} to
+    {ho_gbm_fresh_prauc} overstates any loss of ranking skill. Dividing by the
+    base rate is only a rough check, not a standard metric.
+  - *Alert slots (affects fresh recall only).* The Sept 7-8 positives also rank
+    highly and take up some of the 500 alerts. They are correct alerts, but they
+    don't count toward fresh recall. Fresh PR-AUC isn't affected, because those
+    accounts are left out of it.
 - **Score drift was low** (PSI {ho_psi} vs the train window, against {gbm_psi} on
   test). The holdout's weekdays (Wed-Sat) look more like the train window's
   (Thu-Sun) than the test window's (Mon-Thu). This supports the Section 6 reading that

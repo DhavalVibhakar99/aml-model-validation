@@ -411,13 +411,25 @@ from Sept 7-8, since they are neither clean negatives nor fresh positives.
 - **The headline holds.** LightGBM reaches PR-AUC 0.322, 93%
   precision at 500, and recall 17.3% out of a possible 18.6%. That
   is 8x the tuned rules' recall (2.0%).
-- **The fresh-label number is weaker, and it's the honest one.** PR-AUC is
-  0.196 and recall at 500 is 12.5% (at most
+- **The fresh-label number is lower, and it's the conservative one to quote.**
+  PR-AUC is 0.196 and recall at 500 is 12.5% (at most
   41.8% is possible), still 8x the tuned rules.
-  Part of the gap is mechanical: the Sept 7-8 positives also rank highly and take up
-  alert slots. They are correct alerts, but they don't count toward fresh recall.
-  The other part is probably real. A fresh positive's laundering sits only in the
-  last two days of the window, so half its history is ordinary activity that dilutes the signal.
+  Three things drive the gap, and they affect the two metrics differently:
+  - *A harder group.* Fresh positives are accounts whose laundering only
+    *started* on Sept 9-10, so half of their 4-day history is ordinary activity
+    that dilutes the signal. The repeat launderers that are easiest to spot are,
+    by definition, not in this group. This affects both metrics.
+  - *A lower base rate (affects PR-AUC).* The fresh evaluation has
+    0.33% positives against 0.73% in the full holdout, and PR-AUC falls
+    with the base rate even when ranking skill doesn't. Relative to its base
+    rate, fresh PR-AUC is 60x chance against
+    44x for the full holdout. So the drop from 0.322 to
+    0.196 overstates any loss of ranking skill. Dividing by the
+    base rate is only a rough check, not a standard metric.
+  - *Alert slots (affects fresh recall only).* The Sept 7-8 positives also rank
+    highly and take up some of the 500 alerts. They are correct alerts, but they
+    don't count toward fresh recall. Fresh PR-AUC isn't affected, because those
+    accounts are left out of it.
 - **Score drift was low** (PSI 0.030 vs the train window, against 0.423 on
   test). The holdout's weekdays (Wed-Sat) look more like the train window's
   (Thu-Sun) than the test window's (Mon-Thu). This supports the Section 6 reading that

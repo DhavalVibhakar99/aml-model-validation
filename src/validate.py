@@ -512,6 +512,14 @@ def holdout_section(v, m):
              ho_max_r500=pct(500 / pop["positives_total"]),
              ho_fresh_max_r500=pct(500 / pop["fresh_positives"]),
              ho_psi=f"{h['psi_lightgbm_score_vs_train']:.3f}")
+    # PR-AUC falls with the base rate even when ranking skill doesn't (a random
+    # ranking scores roughly the prevalence), so the fresh and full holdout
+    # numbers aren't directly comparable. Dividing by the base rate is a rough
+    # "times better than chance" - not a standard metric, just a sanity check.
+    fresh_prev = pop["fresh_scored"] / (pop["accounts"] - pop["stale_accounts"])
+    v.update(ho_fresh_prev=pct(fresh_prev, 2),
+             ho_gbm_prauc_x=f"{g['pr_auc'] / pop['prevalence']:.0f}",
+             ho_gbm_fresh_prauc_x=f"{g['fresh_pr_auc'] / fresh_prev:.0f}")
     m["holdout"] = h
 
 

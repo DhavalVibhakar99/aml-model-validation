@@ -220,5 +220,8 @@
   "ho_max_r500": "18.6%",
   "ho_fresh_max_r500": "41.8%",
   "ho_psi": "0.030",
+  "ho_fresh_prev": "0.33%",
+  "ho_gbm_prauc_x": "44",
+  "ho_gbm_fresh_prauc_x": "60",
   "run_id": "20260927T211202Z"
 }

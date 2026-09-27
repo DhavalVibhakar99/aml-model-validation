@@ -186,3 +186,9 @@ what would change our mind.
   loading bug was found and fixed *before* scoring: the pickled LR pointed at
   `__main__.log_heavy`. The fix was checked to reproduce every test score
   exactly (max diff 0.0) before the holdout ran.
+- **Reading it (added later, holdout not rescored):** the fresh evaluation has a
+  lower base rate (0.33% vs 0.73%), and PR-AUC falls with prevalence. Relative
+  to chance, fresh PR-AUC is ~60x vs ~44x for the full holdout, so the
+  0.322 -> 0.196 drop overstates any loss of skill. The first write-up
+  attributed part of the gap to alert slots, which only affects fresh
+  *recall*, not fresh PR-AUC.
