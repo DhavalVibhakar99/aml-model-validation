@@ -55,6 +55,60 @@
       0.18586513814575234
     ]
   },
+  "segment/rules/seen in train": {
+    "accounts": 237112,
+    "positives": 2328,
+    "prevalence": 0.00981814501164007,
+    "pr_auc": 0.015468605459733059,
+    "alerts_in_top500": 500,
+    "precision_in_top500": 0.074,
+    "recall_at_500": 0.015893470790378006
+  },
+  "segment/rules/new in test": {
+    "accounts": 16001,
+    "positives": 419,
+    "prevalence": 0.026185863383538528,
+    "pr_auc": 0.07682955543993433,
+    "alerts_in_top500": 0,
+    "precision_in_top500": 0.0,
+    "recall_at_500": 0.0
+  },
+  "segment/logreg/seen in train": {
+    "accounts": 237112,
+    "positives": 2328,
+    "prevalence": 0.00981814501164007,
+    "pr_auc": 0.08040036152720267,
+    "alerts_in_top500": 338,
+    "precision_in_top500": 0.20710059171597633,
+    "recall_at_500": 0.03006872852233677
+  },
+  "segment/logreg/new in test": {
+    "accounts": 16001,
+    "positives": 419,
+    "prevalence": 0.026185863383538528,
+    "pr_auc": 0.11928434131955903,
+    "alerts_in_top500": 162,
+    "precision_in_top500": 0.12962962962962962,
+    "recall_at_500": 0.050119331742243436
+  },
+  "segment/lightgbm/seen in train": {
+    "accounts": 237112,
+    "positives": 2328,
+    "prevalence": 0.00981814501164007,
+    "pr_auc": 0.32849962579464936,
+    "alerts_in_top500": 413,
+    "precision_in_top500": 0.9854721549636803,
+    "recall_at_500": 0.17482817869415807
+  },
+  "segment/lightgbm/new in test": {
+    "accounts": 16001,
+    "positives": 419,
+    "prevalence": 0.026185863383538528,
+    "pr_auc": 0.3561717385218774,
+    "alerts_in_top500": 87,
+    "precision_in_top500": 1.0,
+    "recall_at_500": 0.20763723150357996
+  },
   "calibration/logreg": {
     "brier": 0.010496077576780382,
     "mean_pred": 0.004197338610304748

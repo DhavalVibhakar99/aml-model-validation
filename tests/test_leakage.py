@@ -39,6 +39,21 @@ def test_label_column_is_not_used(con):
     assert_frame_equal(a, b)
 
 
+def test_features_build_without_label_column(con):
+    # stronger than the shuffle test: if the column doesn't exist and the SQL
+    # still runs, no feature can possibly read it (DuckDB would raise a Binder
+    # error on any reference). Output must match the run that had the column.
+    with_label = run(con, HISTORY, start=START, cutoff=CUTOFF)
+    rows = pd.DataFrame(HISTORY).drop(columns="is_laundering")
+    without = run(con, rows.to_dict("records"), start=START, cutoff=CUTOFF)
+    assert_frame_equal(with_label, without)
+
+
+def test_feature_list_has_no_label_columns():
+    from features import FEATURES
+    assert not {"is_laundering", "label", "label_next"} & set(FEATURES)
+
+
 def test_windows_do_not_overlap():
     from split import DATA_END, WINDOWS
     for name, w in WINDOWS.items():

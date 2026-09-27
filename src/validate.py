@@ -195,6 +195,55 @@ def outcomes_section(scores, v, m):
     plt.close(fig)
 
 
+# ---------------------------------------------------------------- seen vs unseen
+
+def segment_section(scores, v, m):
+    """Split the test population by whether the account was active in the train
+    window. The models see no account ids, so they can't memorise anyone - but
+    'seen' accounts might still be easier (familiar behaviour, repeat
+    launderers), and a bank's new-customer book is exactly where you'd worry.
+    The ranking and the 500-alert budget stay global; we just ask where the
+    alerts and the misses land."""
+    tr, te = load("hi_small", "train"), load("hi_small", "test")
+    seen = te.acct.isin(set(tr.acct)).to_numpy()
+    repeat = te.acct.isin(set(tr.acct[tr.label == 1])).to_numpy()
+    rows = []
+    for model in MODELS:
+        g = scores[(scores.model == model) & (scores.dataset == "hi_small") & (scores.window == "test")]
+        # scores.parquet rows are in the same account order as the split table
+        assert (g.acct.to_numpy() == te.acct.to_numpy()).all()
+        y, s = g.label.to_numpy(), g.score.to_numpy()
+        top = np.zeros(len(y), bool)
+        top[np.argsort(-s, kind="stable")[:500]] = True
+        for name, mask in (("seen in train", seen), ("new in test", ~seen)):
+            n_pos = int(y[mask].sum())
+            r = {"accounts": int(mask.sum()), "positives": n_pos, "prevalence": float(y[mask].mean()),
+                 "pr_auc": float(average_precision_score(y[mask], s[mask])),
+                 "alerts_in_top500": int((top & mask).sum()),
+                 "precision_in_top500": float(y[top & mask].mean()) if (top & mask).any() else 0.0,
+                 "recall_at_500": float(y[top & mask].sum() / n_pos)}
+            m[f"segment/{model}/{name}"] = r
+            rows.append({"Model": NAME[model], "Segment": name, "Accounts": f"{r['accounts']:,}",
+                         "Positives": f"{n_pos:,} ({pct(r['prevalence'], 2)})",
+                         "PR-AUC": f"{r['pr_auc']:.3f}",
+                         "Alerts in top 500": f"{r['alerts_in_top500']:,}",
+                         "Precision of those": pct(r["precision_in_top500"], 0),
+                         "Recall@500": pct(r["recall_at_500"])})
+            tag = f"seg_{'gbm' if model == 'lightgbm' else model}_{'seen' if mask is seen else 'new'}"
+            v[f"{tag}_prauc"] = f"{r['pr_auc']:.3f}"
+            v[f"{tag}_r500"] = pct(r["recall_at_500"])
+            v[f"{tag}_alerts"] = f"{r['alerts_in_top500']:,}"
+            v[f"{tag}_prec"] = pct(r["precision_in_top500"], 0)
+    v["table_segments"] = md_table(pd.DataFrame(rows))
+    y = te.label.to_numpy()
+    v.update(seg_seen_accts=f"{seen.sum():,}", seg_new_accts=f"{(~seen).sum():,}",
+             seg_seen_share=pct(seen.mean(), 0),
+             seg_seen_pos=f"{int(y[seen].sum()):,}", seg_new_pos=f"{int(y[~seen].sum()):,}",
+             seg_seen_prev=pct(y[seen].mean(), 2), seg_new_prev=pct(y[~seen].mean(), 2),
+             seg_repeat=f"{int((repeat & (y == 1)).sum()):,}",
+             seg_repeat_share=pct((repeat & (y == 1)).sum() / y.sum()))
+
+
 # ---------------------------------------------------------------- calibration
 
 def calibration_section(scores, v, m):
@@ -408,6 +457,7 @@ def main():
     v, m = {}, {}
     data_section(v)
     outcomes_section(scores, v, m)
+    segment_section(scores, v, m)
     calibration_section(scores, v, m)
     gain = stability_section(scores, v, m)
     soundness_section(scores, gain, v, m)
