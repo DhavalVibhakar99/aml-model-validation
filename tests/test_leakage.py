@@ -44,8 +44,13 @@ def test_windows_do_not_overlap():
     for name, w in WINDOWS.items():
         assert w["start"] < w["cutoff"] < w["label_end"], name
     tr, te = WINDOWS["train"], WINDOWS["test"]
-    # the whole train window (features + label) ends before test features start
-    assert tr["label_end"] <= te["start"]
+    # everything training saw (its features AND labels) ends before the test
+    # labels begin. Test *features* may reuse days that were train labels -
+    # that's just what "history" means at scoring time.
+    assert tr["label_end"] <= te["cutoff"]
+    # same lengths, so a count over 4 days means the same thing in both
+    assert tr["cutoff"] - tr["start"] == te["cutoff"] - te["start"]
+    assert tr["label_end"] - tr["cutoff"] == te["label_end"] - te["cutoff"]
 
 
 def test_labels_only_come_from_label_window(con):

@@ -66,3 +66,21 @@ what would change our mind.
 - **What would change our mind:** real data with moving FX rates (you'd use a
   daily rate table), or the capped pass-through saturating for a big share of
   positive accounts.
+
+## 5. Windows: 4 days of features -> 2 days of label, train 1-4/5-6, test 5-8/9-10
+- **Decision:** train = features Sept 1-4, label Sept 5-6; test = features
+  Sept 5-8, label Sept 9-10. Same lengths. Test labels start after everything
+  training touched.
+- **Alternatives:** the first proposal (train 1-4/5-6, test 3-8/9-10). Its test
+  feature window is 6 days vs 4, so a count like `in_count` would mean
+  something different in train and test. Fully disjoint 3/2 windows
+  (1-3/4-5, 6-8/9-10) would throw away a day of history for no leakage gain.
+- **Why:** test features overlapping the train label days isn't a leak. A live
+  model scored on Sept 9 would have both the Sept 5-8 history and the Sept 5-6
+  labels. The weekday mix differs between the windows (train history is
+  Thu-Sun, test history is Mon-Thu), and the PSI checks will show it.
+- **Coverage:** 379 of 1,018 HI test positives (37%) never transact in Sept 5-8,
+  so no history-based model can score them. They count as misses in recall
+  (denominator = all positives), which caps recall at 63%.
+- **What would change our mind:** a longer dataset, which would allow a proper
+  rolling backtest over many cutoffs instead of one.
