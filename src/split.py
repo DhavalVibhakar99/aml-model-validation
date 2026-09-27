@@ -1,10 +1,11 @@
 """
 split.py - rolling time windows -> one modelling table per (dataset, window).
 
-Each window is: features from [start, cutoff), label from [cutoff, label_end).
-Train and test use the same lengths (4 days of history, 2 days of label) and
-don't overlap at all - see DECISIONS #5 for why this isn't the 1-4/5-6 vs
-3-8/9-10 split first proposed.
+Each window is 4 days of transactions [start, cutoff), and carries two labels:
+    label       laundering inside [start, cutoff)      - detection, the primary
+    label_next  laundering in [cutoff, next_end)       - forecasting, secondary
+Train (Sept 1-4) and test (Sept 5-8) don't overlap. DECISIONS #5 and #6 explain
+why detection is primary and why this isn't the split first proposed.
 
 Usage:
     python src/split.py              # both datasets
@@ -29,11 +30,11 @@ DATA_END = pd.Timestamp("2022-09-11")
 SEED_END = pd.Timestamp("2022-09-02")
 
 WINDOWS = {
-    #            features [start, cutoff)        label [cutoff, label_end)
+    #            features + label [start, cutoff)     label_next [cutoff, next_end)
     "train": {"start": pd.Timestamp("2022-09-01"), "cutoff": pd.Timestamp("2022-09-05"),
-              "label_end": pd.Timestamp("2022-09-07")},
+              "next_end": pd.Timestamp("2022-09-07")},
     "test":  {"start": pd.Timestamp("2022-09-05"), "cutoff": pd.Timestamp("2022-09-09"),
-              "label_end": pd.Timestamp("2022-09-11")},
+              "next_end": pd.Timestamp("2022-09-11")},
 }
 
 
@@ -49,20 +50,22 @@ def make_labels(con, table: str, label_start, label_end) -> set:
 
 def build_window(con, dataset_key: str, name: str, fx: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     w = WINDOWS[name]
-    assert w["label_end"] <= DATA_END, "label window runs into the trimmed tail"
+    assert w["next_end"] <= DATA_END, "label window runs into the trimmed tail"
     feats = build_features(con, "txns", w["start"], w["cutoff"], SEED_END, fx)
-    positives = make_labels(con, "txns", w["cutoff"], w["label_end"])
-    feats["label"] = feats["acct"].isin(positives).astype(int)
-
-    # positives we can't score because they had no history in the feature window.
-    # A real TM system would miss these too - they're a blind spot, not an error,
-    # and they belong in the recall denominator (see metrics.py / DECISIONS #5)
-    n_unseen = len(positives - set(feats["acct"]))
-    stats = {
-        "accounts": len(feats), "positives": int(feats["label"].sum()),
-        "positives_no_history": n_unseen,
-        "prevalence": float(feats["label"].mean()),
-    }
+    scored = set(feats["acct"])
+    stats = {"accounts": len(feats)}
+    for col, (a, b) in {"label": (w["start"], w["cutoff"]),
+                        "label_next": (w["cutoff"], w["next_end"])}.items():
+        positives = make_labels(con, "txns", a, b)
+        feats[col] = feats["acct"].isin(positives).astype(int)
+        # positives we can't score because they did nothing in the feature window.
+        # A real TM system would miss these too - they're a blind spot, not an
+        # error, so they stay in the recall denominator (metrics.at_k). For
+        # detection this is ~0 by construction (only a laundering *self*-transfer
+        # on day 1 could do it); for forecasting it's a big chunk.
+        stats[col] = {"positives": int(feats[col].sum()),
+                      "positives_no_history": len(positives - scored),
+                      "prevalence": float(feats[col].mean())}
     return feats, stats
 
 
@@ -80,9 +83,9 @@ def run(dataset: str) -> dict:
         df, stats = build_window(con, key, name, fx)
         df.to_parquet(PROCESSED / f"{key}_{name}.parquet", index=False)
         summary[name] = stats
-        print(f"{dataset:9s} {name:5s}  accounts {stats['accounts']:>7,}  "
-              f"positives {stats['positives']:>5,}  ({stats['prevalence']:.3%})  "
-              f"no-history positives {stats['positives_no_history']:,}")
+        print(f"{dataset:9s} {name:5s}  accounts {stats['accounts']:>7,}  " + "  ".join(
+            f"{c}: {stats[c]['positives']:,} pos ({stats[c]['prevalence']:.3%}), "
+            f"{stats[c]['positives_no_history']:,} unscoreable" for c in ("label", "label_next")))
     (PROCESSED / f"{key}_split_summary.json").write_text(json.dumps(summary, indent=2))
     return summary
 

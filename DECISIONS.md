@@ -67,20 +67,53 @@ what would change our mind.
   daily rate table), or the capped pass-through saturating for a big share of
   positive accounts.
 
-## 5. Windows: 4 days of features -> 2 days of label, train 1-4/5-6, test 5-8/9-10
-- **Decision:** train = features Sept 1-4, label Sept 5-6; test = features
-  Sept 5-8, label Sept 9-10. Same lengths. Test labels start after everything
-  training touched.
+
+## 5. Windows: train = Sept 1-4, test = Sept 5-8, forecast labels on the next 2 days
+- **Decision:** two 4-day feature windows that don't overlap at all: train
+  Sept 1-4 and test Sept 5-8. Each also carries a forecast label for the 2 days
+  after it (Sept 5-6 and Sept 9-10, see #6).
 - **Alternatives:** the first proposal (train 1-4/5-6, test 3-8/9-10). Its test
   feature window is 6 days vs 4, so a count like `in_count` would mean
-  something different in train and test. Fully disjoint 3/2 windows
-  (1-3/4-5, 6-8/9-10) would throw away a day of history for no leakage gain.
-- **Why:** test features overlapping the train label days isn't a leak. A live
-  model scored on Sept 9 would have both the Sept 5-8 history and the Sept 5-6
-  labels. The weekday mix differs between the windows (train history is
-  Thu-Sun, test history is Mon-Thu), and the PSI checks will show it.
-- **Coverage:** 379 of 1,018 HI test positives (37%) never transact in Sept 5-8,
-  so no history-based model can score them. They count as misses in recall
-  (denominator = all positives), which caps recall at 63%.
+  something different in train and test, and the train and test windows overlap.
+- **Why:** same lengths, fully disjoint, and every day from Sept 1-10 gets used.
+  The weekday mix differs (train is Thu-Sun, test is Mon-Thu), and the PSI
+  checks show what that does.
 - **What would change our mind:** a longer dataset, which would allow a proper
   rolling backtest over many cutoffs instead of one.
+
+## 6. Primary label = detection (same window), forecast kept as a secondary analysis
+- **Decision:** label = account sent/received >= 1 laundering txn *within* the
+  feature window. The CLAUDE.md default (laundering in the *next* window) is
+  still built as `label_next` and reported as a secondary result.
+- **Evidence (first run, HI):** under forecasting, LightGBM test PR-AUC was 0.031
+  (in-sample 0.354, so badly overfit), recall@1000 was 4.9%, and logistic
+  regression reached only 0.019 even in-sample. Only 229 of 1,018 forecast
+  positives were laundering in their own feature window, and 379 had no
+  history at all. So even an oracle that knew past labels would top out at
+  ~22% recall. Under detection, the same features give test PR-AUC 0.334 vs
+  0.371 in-sample, so it generalizes.
+- **Why this is the right framing, not just the better number:** a TM system
+  reviews an account's recent activity and asks whether *that* activity was
+  suspicious. The SAR is filed on activity that already happened. "Who will
+  launder in the next 48h" is a harder, different product. Leakage is still
+  controlled: features never read `is_laundering` (test_leakage.py), and train
+  and test periods don't overlap.
+- **What would change our mind:** a use case that is explicitly early-warning
+  (e.g. freezing accounts before funds move), or much longer data where
+  laundering persists across windows.
+
+## 7. Model settings: fixed hyperparameters, no class weights, rules scored by count
+- **Decision:** LightGBM and LR use fixed, conservative settings with no
+  tuning (LightGBM: 400 trees, lr 0.03, min_child_samples 200). No class
+  weights or resampling. The rules baseline scores = number of the 6 typology
+  rules hit, with ties broken by dollar flow.
+- **Alternatives:** tuning on a validation window; `is_unbalance` /
+  SMOTE; an ACH-specific rule.
+- **Why:** with 10 days of data the only window left for tuning is the test
+  window, so tuning would bias the test result upward. Class weights barely
+  change ranking but inflate predicted probabilities, and calibration is one of
+  our metrics. The rules follow standard typologies (rapid movement, fan-in/out,
+  structuring, velocity, high-risk channel) and not the dataset's quirks. An
+  "ACH rule" would be tuning the baseline to the answer.
+- **What would change our mind:** a longer dataset with a clean validation
+  window (then tune), or the unweighted LightGBM failing to rank positives.
