@@ -48,7 +48,7 @@ what would change our mind.
   scale test.
 
 ## 4. Feature definitions
-- **Decision:** 22 account-level features over non-self transfers in
+- **Decision:** 21 account-level features over non-self transfers in
   [start, cutoff), all amounts in USD. Pass-through = USD sent out within
   24h/48h of the account's most recent incoming payment, divided by USD
   received (capped at 10). Flow balance is `out / (in + out)`, which stays
@@ -87,10 +87,10 @@ what would change our mind.
   still built as `label_next` and reported as a secondary result.
 - **Evidence (first run, HI):** under forecasting, LightGBM test PR-AUC was 0.031
   (in-sample 0.354, so badly overfit), recall@1000 was 4.9%, and logistic
-  regression reached only 0.019 even in-sample. Only 229 of 1,018 forecast
-  positives were laundering in their own feature window, and 379 had no
-  history at all. So even an oracle that knew past labels would top out at
-  ~22% recall. Under detection, the same features give test PR-AUC 0.334 vs
+  regression reached only 0.019 even in-sample. Of 1,397 forecast positives,
+  only 229 (16%) were laundering in their own feature window, and 379 (27%)
+  had no history at all. So even an oracle that knew past labels would top
+  out around 16% recall. Under detection, the same features give test PR-AUC 0.334 vs
   0.371 in-sample, so it generalizes.
 - **Why this is the right framing, not just the better number:** a TM system
   reviews an account's recent activity and asks whether *that* activity was
@@ -117,3 +117,16 @@ what would change our mind.
   "ACH rule" would be tuning the baseline to the answer.
 - **What would change our mind:** a longer dataset with a clean validation
   window (then tune), or the unweighted LightGBM failing to rank positives.
+
+## 8. The report is rendered from a template by validate.py
+- **Decision:** `reports/validation_report.md` is generated from
+  `reports/templates/validation_report.md`, with every number a placeholder
+  filled by `src/validate.py`. The formatted values also go to
+  `reports/report_values.json`.
+- **Alternatives:** hand-write the report and paste numbers in; a notebook.
+- **Why:** "every number is produced by a script" is only true if a number
+  can't be typed by hand. A rerun rebuilds the whole document, so the prose
+  can't drift from the code. The prose that interprets numbers is still
+  hand-written, so it needs rereading after any change that moves the results.
+- **What would change our mind:** a report long enough that templating gets
+  in the way of editing (then use a proper tool, e.g. Quarto).
