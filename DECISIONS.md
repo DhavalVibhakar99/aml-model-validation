@@ -46,3 +46,23 @@ what would change our mind.
   need, and the disk had ~2 GB free.
 - **What would change our mind:** needing the Medium/Large sets for a
   scale test.
+
+## 4. Feature definitions
+- **Decision:** 22 account-level features over non-self transfers in
+  [start, cutoff), all amounts in USD. Pass-through = USD sent out within
+  24h/48h of the account's most recent incoming payment, divided by USD
+  received (capped at 10). Flow balance is `out / (in + out)`, which stays
+  bounded. Burstiness is Goh & Barabasi's (sd - mean)/(sd + mean) of
+  inter-transaction gaps. Plus a count of transfers in the $8k-$10k
+  structuring band.
+- **Alternatives:** raw out/in ratio (infinite for accounts that only send);
+  FIFO matching of each dollar in to a dollar out (more exact, much harder to
+  explain and test); summing native-currency amounts (meaningless: 1 BTC and
+  1 Yen would add up to 2).
+- **Why:** each feature has a one-sentence meaning an investigator would
+  recognise, and each has a hand-computed unit test. FX rates are medians of
+  implied rates from cross-currency transfers in the *training* feature window;
+  the simulator's rates are fixed, so this is exact to ~4 significant figures.
+- **What would change our mind:** real data with moving FX rates (you'd use a
+  daily rate table), or the capped pass-through saturating for a big share of
+  positive accounts.
