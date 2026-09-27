@@ -104,9 +104,33 @@ def sanity_check(path: Path) -> None:
     print(f"  time range        : {t_min}  ->  {t_max}")
     print(f"  cross-currency    : {cross_ccy:,}  ({cross_ccy / n:.2%})")
 
-    # the one check that should stop the pipeline cold
+    # amounts feed every in/out and pass-through feature, so a NULL or a zero
+    # here would quietly turn into a divide-by-zero or a fake "0% pass-through"
+    n_bad_amt, n_self = con.execute(f"""
+        SELECT
+            count(*) FILTER (WHERE amount_paid IS NULL OR amount_received IS NULL
+                             OR amount_paid <= 0 OR amount_received <= 0),
+            count(*) FILTER (WHERE src_acct = dst_acct)
+        FROM '{path}'
+    """).fetchone()
+    print(f"  null/non-pos amts : {n_bad_amt:,}")
+    print(f"  self-transfers    : {n_self:,}  ({n_self / n:.2%})")
+
+    # the split design depends on what each day looks like - a sparse tail
+    # where most rows are laundering would be a generator artifact, not behavior
+    daily = con.execute(f"""
+        SELECT ts::DATE, count(*), sum(is_laundering)
+        FROM '{path}' GROUP BY 1 ORDER BY 1
+    """).fetchall()
+    print("  daily volume      :")
+    for day, cnt, bad in daily:
+        print(f"    {day}  {cnt:>9,} txns  {bad:>4} laundering  ({bad / cnt:.2%})")
+
+    # the checks that should stop the pipeline cold
     if n_bad:
         raise ValueError(f"{n_bad:,} rows had unparseable timestamps - inspect before moving on")
+    if n_bad_amt:
+        raise ValueError(f"{n_bad_amt:,} rows had missing or non-positive amounts")
 
 
 if __name__ == "__main__":
