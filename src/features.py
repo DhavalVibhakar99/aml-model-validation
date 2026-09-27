@@ -10,6 +10,7 @@ path, so the tests can register a tiny hand-built DataFrame under the same
 name and run the exact same SQL the real pipeline runs.
 """
 import duckdb
+import numpy as np
 import pandas as pd
 
 # Reinvestment never shows up between two different accounts (it's always a
@@ -22,6 +23,12 @@ FEATURES = [
     *[f"fmt_{f.lower().replace(' ', '_')}" for f in FORMATS],
     "near_10k_count", "burstiness", "max_txns_1h", "self_count",
 ]
+
+# counts and dollar amounts span 0 to billions; LR needs them squashed or the
+# one $30bn account dominates the fit. Shares, ratios and burstiness are
+# already on a small scale and stay as they are.
+HEAVY = ["in_count", "out_count", "in_uniq", "out_uniq", "in_usd", "out_usd",
+         "med_gap_h", "near_10k_count", "max_txns_1h", "self_count", "pt_24h", "pt_48h"]
 
 # pass-through ratios blow up when an account received almost nothing, so they
 # get capped. 10x is already "sent out way more than came in".
@@ -181,3 +188,9 @@ def estimate_fx(con: duckdb.DuckDBPyConnection, table: str, start, end) -> pd.Da
         ORDER BY currency
     """, {"start": pd.Timestamp(start), "end": pd.Timestamp(end)}).df()
     return fx
+
+
+def log_heavy(X: pd.DataFrame) -> pd.DataFrame:
+    X = X.copy()
+    X[HEAVY] = np.log1p(X[HEAVY])
+    return X

@@ -35,19 +35,16 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
-from features import FEATURES
+# log_heavy lives in features.py, not here: a pickled pipeline stores a pointer
+# to the function, and one defined in a script run as __main__ can't be loaded
+# by any other script (holdout.py found this the hard way)
+from features import FEATURES, log_heavy
 from metrics import KS, summary
 from split import PROCESSED, WINDOWS
 
 ARTIFACTS = Path("artifacts")
 RUNS = Path("reports/runs")
 SEED = 42
-
-# counts and dollar amounts span 0 to billions; LR needs them squashed or the
-# one $30bn account dominates the fit. Shares, ratios and burstiness are
-# already on a small scale and stay as they are.
-HEAVY = ["in_count", "out_count", "in_uniq", "out_uniq", "in_usd", "out_usd",
-         "med_gap_h", "near_10k_count", "max_txns_1h", "self_count", "pt_24h", "pt_48h"]
 
 # Fixed, fairly conservative settings - no tuning. Tuning needs a validation
 # window, and with 10 days of data the only candidate is the test window,
@@ -139,12 +136,6 @@ def tune_rules(d: pd.DataFrame, y: np.ndarray, n_pos: int, passes: int = 10):
         if not changed:
             break
     return th, best, history
-
-
-def log_heavy(X: pd.DataFrame) -> pd.DataFrame:
-    X = X.copy()
-    X[HEAVY] = np.log1p(X[HEAVY])
-    return X
 
 
 def fit_logreg(X, y):
